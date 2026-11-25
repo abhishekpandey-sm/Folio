@@ -24,6 +24,8 @@ const envSchema = z.object({
     SMTP_APP_PASSWORD: z.string().min(16),
 
     APP_BASE_URL: z.url().default("http://localhost:5173"),
+
+    ACCESS_TOKEN_SECRET: z.string().min(32),
 })
 
 

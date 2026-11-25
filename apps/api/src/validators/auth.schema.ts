@@ -15,3 +15,14 @@ export const signupSchema = z.object({
             .max(128)
 })
 
+
+export const signinSchema = z.object({
+    email: z.email()
+        .trim()
+        .toLowerCase(),
+
+    password: z.string()
+        .min(1, "Password is required")
+        .max(128)
+});
+

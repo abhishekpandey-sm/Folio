@@ -3,6 +3,10 @@ import { z } from "zod";
 import { verifyEmail } from "../services/verification.service.js";
 import { signup } from "../services/auth.service.js";
 import { signupSchema } from "../validators/auth.schema.js";
+import { signin } from "../services/auth.service.js";
+import { signinSchema } from "../validators/auth.schema.js";
+import { env } from "../config/env.js"
+
 
 const verifyEmailSchema = z.object({
     token: z.string().min(1)
@@ -67,5 +71,58 @@ export async function signupController(
             }
         }
         return res.status(500).json({ message: "Something went wrong" })
+    }
+}
+
+export async function signinController(
+    req: Request,
+    res: Response
+){
+    const userAgent = req.get("user-agent") ?? "";
+    const parsed = signinSchema.safeParse(req.body)
+
+    if(!parsed.success){
+        return res.status(400).json({
+            message: "Invalid signin details",
+            errors: parsed.error.issues
+        })
+    }
+
+    try{
+        const result = await signin(parsed.data, userAgent)
+
+        res.cookie("refreshToken", result.refreshToken, {
+            httpOnly: true,
+            secure: env.NODE_ENV === "production",
+            sameSite: "lax",
+            expires: result.refreshTokenExpiresAt,
+            path: "/api/v1/auth"
+        })
+
+        return res.status(200).json({
+            message: "Signin Successful",
+            accessToken: result.accessToken,
+            userId: result.userId
+        })
+    } catch(error){
+        if(error instanceof Error){
+            if(error.message === "Invalid email or password"){
+                return res.status(401).json({
+                    message: error.message
+                })
+            }
+
+            if(error.message === "Please verify your email before signing in"){
+                return res.status(403).json({
+                    message: error.message
+                })
+            }
+        }
+
+        console.error("Signin failed: ", error)
+
+        return res.status(500).json({
+            message: "Something went wrong"
+        })
     }
 }
