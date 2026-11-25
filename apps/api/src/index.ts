@@ -2,6 +2,7 @@ import express from "express"
 import { env } from "./config/env.js"
 import { connectDatabase } from "@folio/database"
 import authRouter from "./routes/auth.routes.js"
+import notebookRouter from "./routes/notebook.routes.js"
 import cookieParser from "cookie-parser"
 
 const app = express()
@@ -10,6 +11,7 @@ app.use(express.json())
 app.use(cookieParser())
 
 app.use("/api/v1/auth", authRouter)
+app.use("/api/v1/notebooks", notebookRouter)
 
 app.get('/health', (req, res) => {
     res.status(200).json({
