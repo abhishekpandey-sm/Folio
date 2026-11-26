@@ -21,7 +21,7 @@ const chapterSchema = new Schema({
     position: {
         type: Number,
         required: true,
-        min: 1
+        min: 0
     }
 }, {
     timestamps: true

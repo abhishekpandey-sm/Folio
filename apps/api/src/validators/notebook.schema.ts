@@ -33,4 +33,23 @@ export const createNotebookSchema = z.object({
     }
 })
 
-export type CreateNotebookInputs = z.infer<typeof createNotebookSchema>
+export const updateNotebookSchema = z.object({
+    title: z.string()
+            .trim()
+            .min(1, "Notebook title cannot be empty")
+            .max(100)
+            .optional(),
+
+    description: z.string()
+            .trim()
+            .max(500)
+            .optional()
+}).refine(
+    (data) => Object.keys(data).length > 0,
+    {
+        message: "Atleast one field must be provided"
+    }
+)
+
+export type CreateNotebookInputs = z.infer<typeof createNotebookSchema>;
+export type UpdateNotebookInput = z.infer<typeof updateNotebookSchema>;

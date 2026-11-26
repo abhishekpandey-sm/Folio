@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { createNotebookSchema } from "../validators/notebook.schema.js";
-import { getUserNotebooks, getNotebookbyId, createNotebook } from "../services/notebook.service.js";
+import { createNotebookSchema, updateNotebookSchema } from "../validators/notebook.schema.js";
+import { getUserNotebooks, getNotebookbyId, createNotebook, updateNotebook, deleteNotebook } from "../services/notebook.service.js";
 
 export async function createNotebookController(
     req: Request,
@@ -61,7 +61,7 @@ export async function getUserNotebooksController(
     }
 }
 
-export async function getNotebookContrller(
+export async function getNotebookController(
     req: Request,
     res: Response
 ) {
@@ -95,3 +95,87 @@ export async function getNotebookContrller(
         })
     }
 }
+
+export async function updateNotebookController(
+    req: Request,
+    res: Response
+) {
+    try{
+        const { notebookId } = req.params;
+        const parsed = updateNotebookSchema.safeParse(req.body)
+
+        if (typeof notebookId !== "string"){
+            throw new Error("Invalid notebook ID");
+        }
+
+        if(!parsed.success){
+            return res.status(400).json({
+                success: false,
+                message: "Invalid notebook data",
+                errors: parsed.error.issues
+            })
+        }
+
+        const updatedNotebook = await updateNotebook(
+            notebookId,
+            parsed.data
+        )        
+
+        if(!updatedNotebook){
+            return res.status(404).json({
+                success: false,
+                message: "Notebook not found"
+            })
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Notebook updated successfully",
+            notebook: updatedNotebook
+        })
+    } catch(error){
+        console.error("Updated notebook error: ", error)
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to update notebook"
+        })
+    }
+}
+
+export async function deleteNotebookController(
+    req: Request,
+    res: Response
+){
+    try {
+        const rawNotebookId = req.params.notebookId;
+
+        if (typeof rawNotebookId !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid notebook ID"
+            });
+        }
+
+        const deleted = await deleteNotebook(rawNotebookId);
+
+        if(!deleted){
+            return res.status(404).json({
+                success: false,
+                message: "Notebook not found"
+            })
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Notebook and its chapters and pages deleted successfully"
+        })
+    } catch(error){
+        console.error("Delete notebook error: ", error)
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to delete Notebook"
+        })
+    }
+}   
