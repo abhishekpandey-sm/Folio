@@ -23,7 +23,7 @@ const contentBlockSchema = new Schema({
     timestamps: false
 })
 
-const pageSchma = new Schema({
+const pageSchema = new Schema({
     chapterId: {
         type: Schema.Types.ObjectId,
         ref: "Chapter",
@@ -32,7 +32,7 @@ const pageSchma = new Schema({
     position: {
         type: Number,
         required: true,
-        min: 1
+        min: 0
     },
     content: {
         type: [contentBlockSchema],
@@ -42,6 +42,6 @@ const pageSchma = new Schema({
     timestamps: true
 })
 
-pageSchma.index({chapterId: 1, position: 1}, {unique: true})
+pageSchema.index({chapterId: 1, position: 1}, {unique: true})
 
-export const Page = mongoose.model("Page", pageSchma)
+export const Page = mongoose.model("Page", pageSchema)

@@ -140,8 +140,6 @@ export async function reorderChapter(
 
             reordered.splice(newPosition, 0, chapterToMove);
 
-            //Phase 1:  Move every chapter to a temporary position.
-
             const highestPosition = Math.max(
                 ...chapters.map(chapter => chapter.position)
             );
@@ -160,8 +158,6 @@ export async function reorderChapter(
                     { session }
                 );
             }
-
-            // Phase 2: Assign the final positions.
 
             for (let i = 0; i < reordered.length; i++) {
                 await Chapter.updateOne(
