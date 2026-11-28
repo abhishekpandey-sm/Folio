@@ -1,32 +1,63 @@
 import { Chapter, Page, mongoose } from "@folio/database";
 import type { UpdatePageInput } from "../validators/page.schema.js";
 
-export async function createPage( notebookId: string, chapterId: string){
-    const chapter = await Chapter.findOne({
-        _id: chapterId,
-        notebookId
-    }).select("_id").lean()
 
-    if(!chapter){
-        return null;
+export async function createPage(
+    notebookId: string,
+    chapterId: string
+) {
+    const session = await mongoose.startSession();
+
+    let createdPage = null;
+
+    try {
+        await session.withTransaction(async () => {
+            // Reset this because the transaction callback may retry.
+            createdPage = null;
+
+            const chapterExists = await lockChapterPageStructure(
+                notebookId,
+                chapterId,
+                session
+            );
+
+            if (!chapterExists) {
+                return;
+            }
+
+            const lastPage = await Page.findOne({
+                chapterId
+            })
+                .sort({ position: -1 })
+                .select("position")
+                .session(session)
+                .lean();
+
+            const nextPosition = lastPage
+                ? lastPage.position + 1
+                : 0;
+
+            const [page] = await Page.create(
+                [
+                    {
+                        chapterId,
+                        position: nextPosition,
+                        content: []
+                    }
+                ],
+                { session }
+            );
+
+            createdPage = page;
+        });
+
+        return createdPage;
+    } catch (error) {
+        console.error("CREATE PAGE TRANSACTION FAILED:", error);
+        throw error;
+    }finally {
+        await session.endSession();
     }
-
-    const lastPage = await Page.findOne({ chapterId })
-        .sort({ position : -1 })
-        .select("position")
-        .lean()
-
-    const nextPosition = lastPage
-        ? lastPage.position + 1
-        : 0
-        
-    const page = await Page.create({
-        chapterId,
-        position: nextPosition,
-        content: []
-    })
-
-    return page;
 }
 
 
@@ -96,47 +127,56 @@ export async function updatePage( notebookId: string, chapterId: string, pageId:
 
 
 
-export async function deletePage( notebookId: string, chapterId: string, pageId: string ): Promise<boolean> {
-
+export async function deletePage(
+    notebookId: string,
+    chapterId: string,
+    pageId: string
+): Promise<boolean> {
     const session = await mongoose.startSession();
 
+    let deleted = false;
+
     try {
-        let deleted = false;
-
         await session.withTransaction(async () => {
+            deleted = false;
 
-            const chapter = await Chapter.findOne({
-                _id: chapterId,
-                notebookId
-            }).session(session);
+            const chapterExists = await lockChapterPageStructure(
+                notebookId,
+                chapterId,
+                session
+            );
 
-            if (!chapter) return;
+            if (!chapterExists) {
+                return;
+            }
 
             const pages = await Page.find({ chapterId })
                 .sort({ position: 1 })
                 .session(session);
 
-            const pageToDelete = pages.find(
+            const pageIndex = pages.findIndex(
                 page => page._id.toString() === pageId
             );
 
-            if (!pageToDelete) return;
+            if (pageIndex === -1) {
+                return;
+            }
 
-            await Page.deleteOne({
-                _id: pageId,
-                chapterId
-            }).session(session);
+            const highestPosition = pages.length - 1;
+
+            await Page.deleteOne(
+                {
+                    _id: pageId,
+                    chapterId
+                },
+                { session }
+            );
 
             const remainingPages = pages.filter(
-                page => page._id.toString() !== pageId
+                (_, index) => index !== pageIndex
             );
 
-            const highestPosition = Math.max(
-                ...pages.map(page => page.position)
-            );
-
-            const temporaryStart = highestPosition + 1;
-
+            // First move every remaining page to temporary positions.
             for (let i = 0; i < remainingPages.length; i++) {
                 await Page.updateOne(
                     {
@@ -145,13 +185,14 @@ export async function deletePage( notebookId: string, chapterId: string, pageId:
                     },
                     {
                         $set: {
-                            position: temporaryStart + i
+                            position: highestPosition + 1 + i
                         }
                     },
                     { session }
                 );
             }
 
+            // Then assign contiguous positions starting at zero.
             for (let i = 0; i < remainingPages.length; i++) {
                 await Page.updateOne(
                     {
@@ -171,29 +212,34 @@ export async function deletePage( notebookId: string, chapterId: string, pageId:
         });
 
         return deleted;
-
     } finally {
         await session.endSession();
     }
 }
 
 
-export async function reorderPage( notebookId: string, chapterId: string, pageId: string, newPosition: number ): Promise<"success" | "not_found" | "invalid_position"> {
-
+export async function reorderPage(
+    notebookId: string,
+    chapterId: string,
+    pageId: string,
+    newPosition: number
+): Promise<"success" | "not_found" | "invalid_position"> {
     const session = await mongoose.startSession();
 
+    let result: "success" | "not_found" | "invalid_position" =
+        "not_found";
+
     try {
-        let outcome: "success" | "not_found" | "invalid_position" = "not_found";
-
         await session.withTransaction(async () => {
+            result = "not_found";
 
-            const chapter = await Chapter.findOne({
-                _id: chapterId,
-                notebookId
-            }).session(session);
+            const chapterExists = await lockChapterPageStructure(
+                notebookId,
+                chapterId,
+                session
+            );
 
-            if (!chapter) {
-                outcome = "not_found";
+            if (!chapterExists) {
                 return;
             }
 
@@ -206,55 +252,49 @@ export async function reorderPage( notebookId: string, chapterId: string, pageId
             );
 
             if (currentIndex === -1) {
-                outcome = "not_found";
                 return;
             }
 
-            if (newPosition >= pages.length) {
-                outcome = "invalid_position";
+            if (
+                newPosition < 0 ||
+                newPosition >= pages.length
+            ) {
+                result = "invalid_position";
                 return;
             }
 
-            // No need to update anything if the page is already there.
             if (currentIndex === newPosition) {
-                outcome = "success";
+                result = "success";
                 return;
             }
 
-            // 5. Create the new order in memory.
-            const reordered = [...pages];
+            const [movingPage] = pages.splice(currentIndex, 1);
 
-            const [pageToMove] = reordered.splice(currentIndex, 1);
+            pages.splice(newPosition, 0, movingPage);
 
-            reordered.splice(newPosition, 0, pageToMove);
+            const highestPosition = pages.length - 1;
 
-            // 6. Move every page to temporary positions.
-            const highestPosition = Math.max(
-                ...pages.map(page => page.position)
-            );
-
-            const temporaryStart = highestPosition + 1;
-
-            for (let i = 0; i < reordered.length; i++) {
+            // Phase 1: move all pages to unique temporary positions.
+            for (let i = 0; i < pages.length; i++) {
                 await Page.updateOne(
                     {
-                        _id: reordered[i]._id,
+                        _id: pages[i]._id,
                         chapterId
                     },
                     {
                         $set: {
-                            position: temporaryStart + i
+                            position: highestPosition + 1 + i
                         }
                     },
                     { session }
                 );
             }
 
-            // 7. Assign final positions: 0, 1, 2...
-            for (let i = 0; i < reordered.length; i++) {
+            // Phase 2: assign their final positions.
+            for (let i = 0; i < pages.length; i++) {
                 await Page.updateOne(
                     {
-                        _id: reordered[i]._id,
+                        _id: pages[i]._id,
                         chapterId
                     },
                     {
@@ -266,12 +306,40 @@ export async function reorderPage( notebookId: string, chapterId: string, pageId
                 );
             }
 
-            outcome = "success";
+            result = "success";
         });
 
-        return outcome;
-
+        return result;
     } finally {
         await session.endSession();
     }
 }
+
+
+async function lockChapterPageStructure(
+    notebookId: string,
+    chapterId: string,
+    session: mongoose.ClientSession
+) {
+    const chapter = await Chapter.findOneAndUpdate(
+        {
+            _id: chapterId,
+            notebookId
+        },
+        {
+            $inc: {
+                pageStructureVersion: 1
+            }
+        },
+        {
+            session,
+            returnDocument: "after"
+        }
+    )
+        .select("_id")
+        .lean();
+
+    return chapter !== null;
+}
+
+

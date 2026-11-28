@@ -3,39 +3,59 @@ import { mongoose } from "@folio/database";
 import { createPage, getChapterPages, getPageById, updatePage, deletePage, reorderPage } from "../services/page.service.js";
 import { updatePageSchema, reorderPageSchema } from "../validators/page.schema.js";
 
+
 export async function createPageController(
     req: Request,
     res: Response
-){
-    try{
-        const { notebookId: rawNotebookId, chapterId: rawChapterId } = req.params;
+) {
 
-        if( typeof rawNotebookId !== "string" || typeof rawChapterId !== "string" ){
+    try {
+        const {
+            notebookId: rawNotebookId,
+            chapterId: rawChapterId
+        } = req.params;
+
+        if (
+            typeof rawNotebookId !== "string" ||
+            typeof rawChapterId !== "string"
+        ) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid notebook or chapter ID"
-            })
+            });
         }
 
         const notebookId = rawNotebookId.trim();
         const chapterId = rawChapterId.trim();
 
-        if( !mongoose.isObjectIdOrHexString(notebookId) || !mongoose.isObjectIdOrHexString(chapterId) ){
+        if (
+            !mongoose.isObjectIdOrHexString(notebookId) ||
+            !mongoose.isObjectIdOrHexString(chapterId)
+        ) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid notebook or chapter ID"
-            })
+            });
         }
 
         const page = await createPage(notebookId, chapterId);
 
-         if (!page) {
+
+        if (!page) {
             return res.status(404).json({
                 success: false,
                 message: "Chapter not found in this notebook"
             });
         }
-    } catch(error){
+
+
+        return res.status(201).json({
+            success: true,
+            message: "Page created successfully",
+            data: page
+        });
+
+    } catch (error) {
         console.error("Create page error:", error);
 
         return res.status(500).json({
@@ -44,6 +64,7 @@ export async function createPageController(
         });
     }
 }
+
 
 
 export async function getChapterPagesController(req: Request, res: Response) {

@@ -13,7 +13,7 @@ export async function generateAccessToken(userId: string){
         .setIssuedAt()
         .setIssuer(ISSUER)
         .setAudience(AUDIENCE)
-        .setExpirationTime("15m")
+        .setExpirationTime("30m")
         .sign(secret)
 }
 
